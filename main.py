@@ -1,37 +1,66 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 import redis
+import os
 
 app = FastAPI()
 
-r = redis.Redis(
-    host="redis",
-    port=6379,
-    decode_responses=True
-)
+redis_client = None
+
+
+@app.on_event("startup")
+def startup():
+    global redis_client
+
+    redis_host = os.getenv("REDIS_HOST", "redis")
+    redis_port = int(os.getenv("REDIS_PORT", 6379))
+
+    redis_client = redis.Redis(
+        host=redis_host,
+        port=redis_port,
+        decode_responses=True,
+    )
+
+    # Verify Redis connection
+    redis_client.ping()
+
 
 @app.post("/hit/{key}")
 def hit(key: str):
-    count = r.incr(key)
-    return {"key": key, "count": count}
+    try:
+        count = redis_client.incr(key)
+        return {
+            "key": key,
+            "count": count
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/count/{key}")
 def count(key: str):
-    value = r.get(key)
-    return {
-        "key": key,
-        "count": int(value) if value else 0
-    }
+    try:
+        value = redis_client.get(key)
+        return {
+            "key": key,
+            "count": int(value) if value else 0
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/healthz")
-def health():
+def healthz():
     try:
-        r.ping()
+        redis_client.ping()
         return {
             "status": "ok",
             "redis": "up"
         }
-    except:
-        return {
-            "status": "error",
-            "redis": "down"
-        }
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "status": "error",
+                "redis": "down"
+            }
+        )
