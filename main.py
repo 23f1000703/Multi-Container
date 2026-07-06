@@ -1,22 +1,27 @@
 from fastapi import FastAPI
 import redis
+import os
 
 app = FastAPI()
 
-r = redis.Redis(
-    host="redis",
-    port=6379,
-    decode_responses=True
+redis_client = redis.Redis(
+    host=os.getenv("REDIS_HOST", "redis"),
+    port=int(os.getenv("REDIS_PORT", 6379)),
+    decode_responses=True,
 )
 
 @app.post("/hit/{key}")
 def hit(key: str):
-    count = r.incr(key)
-    return {"key": key, "count": count}
+    count = redis_client.incr(key)
+    return {
+        "key": key,
+        "count": count
+    }
 
 @app.get("/count/{key}")
 def count(key: str):
-    value = r.get(key)
+    value = redis_client.get(key)
+
     return {
         "key": key,
         "count": int(value) if value else 0
@@ -25,12 +30,12 @@ def count(key: str):
 @app.get("/healthz")
 def health():
     try:
-        r.ping()
+        redis_client.ping()
         return {
             "status": "ok",
             "redis": "up"
         }
-    except:
+    except Exception:
         return {
             "status": "error",
             "redis": "down"
